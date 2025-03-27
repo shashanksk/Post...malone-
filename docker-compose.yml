@@ -1,0 +1,69 @@
+version: '3.8' # Use a recent version
+
+services:
+  # Database Service (PostgreSQL)
+  db:
+    image: postgres:16-alpine # Use a specific version, alpine is smaller
+    container_name: myapp_db
+    restart: always
+    environment:
+      # These variables are used by the Postgres image to initialize the DB
+      # Use the .env file for sensitive values
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      # Persist database data outside the container
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      # Optional: Expose port 5432 locally if you need to connect with PGAdmin
+      # Format: <host_port>:<container_port>
+      - "5433:5432"
+    networks:
+      - app-network
+
+  # Backend Service (Go)
+  backend:
+    build: ./backend # Path to the directory containing the backend Dockerfile
+    container_name: myapp_backend
+    restart: always
+    depends_on:
+      - db # Wait for the database to be ready (basic check, not foolproof)
+    environment:
+      # Pass environment variables needed by the Go application
+      # !! Important: Use the service name 'db' as the hostname !!
+      DB_HOST: db
+      DB_PORT: 5432 # Default Postgres port inside the Docker network
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      PORT: 8080 # Port the Go app listens on *inside* the container
+    ports:
+      # Map host port 8080 to container port 8080
+      - "8080:8080"
+    networks:
+      - app-network
+
+  # Frontend Service (React + Nginx)
+  frontend:
+    build: ./frontend # Path to the directory containing the frontend Dockerfile
+    container_name: myapp_frontend
+    restart: always
+    depends_on:
+      - backend # Optional, but logical dependency
+    ports:
+      # Map host port 80 to container port 80 (where Nginx listens)
+      - "80:80"
+      # Or use 5173:80 if you prefer the Vite dev port on your host
+      # - "5173:80"
+    networks:
+      - app-network
+
+# Define named volume for persistent data
+volumes:
+  postgres-data:
+
+# Define custom network
+networks:
+  app-network:
+    driver: bridge
