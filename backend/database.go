@@ -108,7 +108,7 @@ func insertFormData(data FormData) error {
 }
 
 func getSubmissions() ([]SubmissionData, error) {
-	query := `SELECT id, name, last_name, username, email, phone_number, location_branch, department, designation FROM form_submission ORDER BY id DESC`
+	query := `SELECT id, name, last_name, username, email, phone_number, location_branch, department, designation FROM form_submissions ORDER BY id DESC`
 
 	rows, err := db.Query(query)
 
