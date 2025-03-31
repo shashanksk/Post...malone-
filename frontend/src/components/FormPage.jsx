@@ -190,7 +190,28 @@ function FormPage() {
   
         if (!response.ok) {
           // Use message from backend JSON response if available
+          
           throw new Error(responseData.message || responseData.error || `HTTP error! Status: ${response.status}`);
+          // let errorMessage = `HTTP error! Status: ${response.status}`; // Default error message
+          // try {
+          //   // Attempt to parse the response text as JSON - maybe backend sent structured error
+          //   const errorJson = JSON.parse(responseText);
+          //   errorMessage = errorJson.message || errorJson.error || responseText || errorMessage;
+          // } catch (parseError) {
+          //   // If parsing failed, use the raw text if available
+          //   errorMessage = responseText || errorMessage;
+          // }
+
+          // // --- 👇👇👇 HANDLE 409 CONFLICT SPECIFICALLY 👇👇👇 ---
+          // if (response.status === 409) {
+          //    // Use the specific message from backend (e.g., "Username already exists...")
+          //    setError(errorMessage);
+          // } else {
+          //    // Handle other client/server errors (400, 500, etc.)
+          //    setError(`Submission failed: ${errorMessage}.`);
+          // }
+          // // Throw error to prevent success logic from running
+          // throw new Error(errorMessage);
         }
   
         // Success

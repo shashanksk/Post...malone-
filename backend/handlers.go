@@ -53,6 +53,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings" // For basic validation checks
@@ -109,6 +110,24 @@ func handleFormSubmit(w http.ResponseWriter, r *http.Request) {
 	if formData.Password != formData.PasswordConfirmation {
 		http.Error(w, "Passwords do not match", http.StatusBadRequest)
 		return
+	}
+
+	existingField, err := checkUserExists(formData.Username, formData.Email)
+	if err != nil {
+		// A database error occurred during the check
+		log.Printf("Database error during user existence check: %v", err)
+		http.Error(w, "Error checking user details. Please try again later.", http.StatusInternalServerError)
+		return
+	}
+	if existingField != "" {
+		// Username or Email already exists
+		errorMessage := fmt.Sprintf("%s already exists. Please choose another.", strings.Title(existingField)) // Capitalize "Username" or "Email"
+		log.Printf("Submission rejected: %s", errorMessage)
+		// Send a 409 Conflict status code
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict) // 409 Conflict
+		json.NewEncoder(w).Encode(map[string]string{"message": errorMessage})
+		return // Stop processing
 	}
 
 	// --- Password Hashing ---

@@ -176,6 +176,39 @@ func deleteSubmissionsByIds(ids []int) error {
 	return nil // Success
 }
 
+func checkUserExists(username, email string) (string, error) {
+	var existingField string
+	// Query to find if username OR email exists, and return which one was found first.
+	// LIMIT 1 makes it slightly more efficient as we only need to know *if* one exists.
+	query := `
+    SELECT
+        CASE
+            WHEN username = $1 THEN 'username'
+            WHEN email = $2 THEN 'email'
+            ELSE ''
+        END
+    FROM form_submissions
+    WHERE username = $1 OR email = $2
+    LIMIT 1`
+
+	// QueryRow executes a query expected to return at most one row.
+	err := db.QueryRow(query, username, email).Scan(&existingField)
+
+	if err != nil {
+		// sql.ErrNoRows means the query ran successfully but found no matching rows.
+		// This is the "success" case for us - meaning user/email doesn't exist.
+		if err == sql.ErrNoRows {
+			return "", nil // Return empty string, no error
+		}
+		// For any other error (connection issue, SQL syntax error, etc.)
+		log.Printf("Error checking for existing username/email: %v", err)
+		return "", fmt.Errorf("database error checking user existence: %w", err)
+	}
+
+	// If we get here without an error, a row was found, and existingField contains "username" or "email"
+	return existingField, nil
+}
+
 func closeDB() {
 	if db != nil {
 		db.Close()
