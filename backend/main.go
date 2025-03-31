@@ -26,12 +26,12 @@ func main() {
 	router := mux.NewRouter()
 
 	// Define API route
-	router.HandleFunc("/submit", handleFormSubmit).Methods("POST", "OPTIONS") // Allow OPTIONS for CORS preflight
-
+	router.HandleFunc("/submission", handleFormSubmit).Methods("POST", "OPTIONS") // Allow OPTIONS for CORS preflight
+	router.HandleFunc("/submission", handleGetSubmissions).Methods("GET", "OPTIONS")
 	// CORS Configuration
 	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173"}, // Vite's default port
-		AllowedMethods:   []string{"POST", "OPTIONS"},
+		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost"}, // Vite's default port
+		AllowedMethods:   []string{"POST", "GET", "OPTIONS"},
 		AllowedHeaders:   []string{"Content-Type"},
 		AllowCredentials: true,
 		// Debug:       true, // Enable for debugging CORS issues

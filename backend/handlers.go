@@ -143,3 +143,45 @@ func handleFormSubmit(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Form submitted successfully!"})
 }
+
+func handleGetSubmissions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("Handling GET request for /submissions")
+
+	// Call the database function to get data
+	submissions, err := getSubmissions()
+	if err != nil {
+		// Log the detailed error on the server
+		log.Printf("Error fetching submissions from database: %v", err)
+		// Send a generic error message to the client
+		http.Error(w, "Failed to retrieve submissions.", http.StatusInternalServerError)
+		return
+	}
+
+	// Marshal the Go slice of structs into JSON
+	jsonData, err := json.Marshal(submissions)
+	if err != nil {
+		log.Printf("Error marshaling submissions to JSON: %v", err)
+		http.Error(w, "Failed to process data.", http.StatusInternalServerError)
+		return
+	}
+
+	// Set response headers and send the JSON data
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK) // 200 OK
+	w.Write(jsonData)
+
+	log.Printf("Successfully returned %d submissions.", len(submissions))
+
+}

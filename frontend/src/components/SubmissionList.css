@@ -1,0 +1,63 @@
+.submission-list-container {
+    margin: 2rem auto;
+    padding: 1rem;
+    max-width: 95%; /* Allow table to be wider */
+  }
+  
+  .submission-list-container h2 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+  }
+  
+  .loading, .error, .no-data {
+      text-align: center;
+      padding: 2rem;
+      font-size: 1.1rem;
+      color: #555;
+  }
+  .error {
+      color: red;
+  }
+  
+  
+  .submission-table {
+    width: 100%;
+    border-collapse: collapse; /* Merge cell borders */
+    margin-top: 1rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  
+  .submission-table th,
+  .submission-table td {
+    border: 1px solid #ddd;
+    padding: 0.8rem 0.6rem; /* More padding vertically */
+    text-align: left;
+    font-size: 0.9rem; /* Slightly smaller font */
+    white-space: nowrap; /* Prevent text wrapping initially */
+    overflow: hidden; /* Hide overflow */
+    text-overflow: ellipsis; /* Show ellipsis (...) for overflow */
+  }
+  
+   /* Allow specific columns more space if needed */
+  .submission-table th:nth-child(4), /* Username */
+  .submission-table td:nth-child(4),
+  .submission-table th:nth-child(5), /* Email */
+  .submission-table td:nth-child(5) {
+      /* min-width: 150px; You could set min-widths */
+  }
+  
+  
+  .submission-table th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  
+  .submission-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+  }
+  
+  .submission-table tr:hover {
+    background-color: #eef; /* Highlight on hover */
+  }

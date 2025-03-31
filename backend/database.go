@@ -107,6 +107,50 @@ func insertFormData(data FormData) error {
 	return nil
 }
 
+func getSubmissions() ([]SubmissionData, error) {
+	query := `SELECT id, name, last_name, username, email, phone_number, location_branch, department, designation FROM form_submission ORDER BY id DESC`
+
+	rows, err := db.Query(query)
+
+	if err != nil {
+		log.Printf("error in querying database for all submissions: %v", err)
+		return nil, fmt.Errorf("database queries failed %w", err)
+	}
+
+	defer rows.Close()
+
+	submissions := []SubmissionData{}
+
+	for rows.Next() {
+		var s SubmissionData
+		err := rows.Scan(
+			&s.Id,
+			&s.Name,
+			&s.LastName,
+			&s.Username,
+			&s.Email,
+			&s.PhoneNumber, // Scan directly into string fields
+			&s.LocationBranch,
+			&s.Department,
+			&s.Designation,
+		)
+		if err != nil {
+			log.Print("Error scanning row data")
+		}
+
+		submissions = append(submissions, s)
+	}
+
+	err = rows.Err()
+
+	for err != nil {
+		log.Printf("Error during rows iteration %v", err)
+		return nil, fmt.Errorf("error iterating over submissions: %w", err)
+	}
+	return submissions, nil
+
+}
+
 func closeDB() {
 	if db != nil {
 		db.Close()
