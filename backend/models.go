@@ -37,3 +37,7 @@ type SubmissionData struct {
 	UserRole       string  `json:"userRole,omitempty"`
 	AccessLevel    string  `json:"accessLevel,omitempty"`
 }
+
+type DeleteRequest struct {
+	Ids []int `json:"ids"`
+}

@@ -169,7 +169,7 @@ function FormPage() {
   
       try {
         // const response = await fetch('http://localhost:8080/submit', {
-        const response = await fetch('submission', { //for docker
+        const response = await fetch('/submission', { //for docker
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

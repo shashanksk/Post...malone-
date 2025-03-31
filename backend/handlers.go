@@ -185,3 +185,58 @@ func handleGetSubmissions(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Successfully returned %d submissions.", len(submissions))
 
 }
+
+func handleDeleteSubmissions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")                // Adjust in production!
+	w.Header().Set("Access-Control-Allow-Methods", "DELETE, OPTIONS") // Allow DELETE
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	// Handle OPTIONS preflight request
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Ensure method is DELETE
+	if r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("Handling DELETE request for /submissions")
+
+	// Decode the request body containing the IDs
+	var deleteReq DeleteRequest
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&deleteReq)
+	if err != nil {
+		log.Printf("Error decoding DELETE request body: %v", err)
+		http.Error(w, "Invalid request body. Expected JSON like {\"ids\": [1, 2, ...]}", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	// Basic validation: Check if IDs array exists or is empty
+	if deleteReq.Ids == nil || len(deleteReq.Ids) == 0 {
+		log.Println("Received delete request with no IDs provided.")
+		http.Error(w, "No submission IDs provided to delete.", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Attempting to delete submission IDs: %v", deleteReq.Ids)
+
+	// Call the database function to delete the records
+	err = deleteSubmissionsByIds(deleteReq.Ids)
+	if err != nil {
+		log.Printf("Error deleting submissions from database: %v", err)
+		http.Error(w, "Failed to delete submissions.", http.StatusInternalServerError)
+		return
+	}
+
+	// Send success response
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK) // 200 OK is fine, could also use 204 No Content if not sending body
+	json.NewEncoder(w).Encode(map[string]string{"message": "Selected submissions deleted successfully!"})
+
+	log.Printf("Successfully processed deletion for IDs: %v", deleteReq.Ids)
+}

@@ -28,10 +28,11 @@ func main() {
 	// Define API route
 	router.HandleFunc("/submission", handleFormSubmit).Methods("POST", "OPTIONS") // Allow OPTIONS for CORS preflight
 	router.HandleFunc("/submission", handleGetSubmissions).Methods("GET", "OPTIONS")
+	router.HandleFunc("/submission", handleDeleteSubmissions).Methods("DELETE", "OPTIONS")
 	// CORS Configuration
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost"}, // Vite's default port
-		AllowedMethods:   []string{"POST", "GET", "OPTIONS"},
+		AllowedMethods:   []string{"POST", "GET", "OPTIONS", "DELETE"},
 		AllowedHeaders:   []string{"Content-Type"},
 		AllowCredentials: true,
 		// Debug:       true, // Enable for debugging CORS issues

@@ -151,6 +151,31 @@ func getSubmissions() ([]SubmissionData, error) {
 
 }
 
+func deleteSubmissionsByIds(ids []int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	query := `DELETE FROM form_submissions WHERE id = ANY($1)`
+
+	result, err := db.Exec(query, pq.Array(ids))
+
+	if err != nil {
+		log.Printf("Error deleting the row %v", err)
+		return fmt.Errorf("Database delete failed: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected after delete: %v", err)
+		// Don't necessarily return error here, the delete might have worked
+	} else {
+		log.Printf("Deleted %d row(s)", rowsAffected)
+	}
+
+	return nil // Success
+}
+
 func closeDB() {
 	if db != nil {
 		db.Close()
