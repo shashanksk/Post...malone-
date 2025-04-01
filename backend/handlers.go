@@ -56,8 +56,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings" // For basic validation checks
 
+	"github.com/gorilla/mux"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -90,6 +92,14 @@ func handleFormSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+
+	// ***** ADD THIS LOGGING *****
+	log.Printf("--- Backend Received Data (handleFormSubmit) ---")
+	log.Printf("Raw Password Received: [%s]", formData.Password)
+	log.Printf("Raw Confirmation Received: [%s]", formData.PasswordConfirmation)
+	log.Printf("-----------------------------------------------")
+	// ****************************
+
 	defer r.Body.Close()
 
 	// --- Server-Side Validation ---
@@ -258,4 +268,146 @@ func handleDeleteSubmissions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "Selected submissions deleted successfully!"})
 
 	log.Printf("Successfully processed deletion for IDs: %v", deleteReq.Ids)
+}
+
+func handleGetSingleSubmission(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Extract ID from URL path parameter
+	vars := mux.Vars(r)
+	idStr, ok := vars["id"]
+	if !ok {
+		http.Error(w, "Missing submission ID in URL path", http.StatusBadRequest)
+		return
+	}
+
+	id, err := strconv.Atoi(idStr) // Convert string ID to integer
+
+	if err != nil {
+		http.Error(w, "Invalid submission ID format in URL path", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Handling GET request for /submission/%d", id)
+
+	// Fetch data from database
+	submission, err := getSubmissionById(id)
+	if err != nil {
+		// Check if it was specifically a "not found" error
+		if strings.Contains(err.Error(), "not found") {
+			log.Printf("Submission not found for ID %d", id)
+			http.Error(w, err.Error(), http.StatusNotFound) // 404 Not Found
+		} else {
+			// Other database error
+			log.Printf("Database error fetching submission ID %d: %v", id, err)
+			http.Error(w, "Failed to retrieve submission.", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Marshal and send response
+	jsonData, err := json.Marshal(submission)
+	if err != nil { /* ... handle marshal error ... */
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(jsonData)
+	log.Printf("Successfully returned submission ID %d", id)
+}
+
+func handleUpdateSubmission(w http.ResponseWriter, r *http.Request) {
+	log.Println("====== handleUpdateSubmission Function Entered ======")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "PUT, OPTIONS") // Allow PUT
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	// Use PUT for replacing/updating the resource representation
+	if r.Method != http.MethodPut {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// --- Get ID from URL ---
+	vars := mux.Vars(r)
+	idStr, ok := vars["id"]
+	if !ok {
+		http.Error(w, "Missing submission ID", http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid submission ID", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Handling PUT request for /submissions/%d", id)
+
+	// --- Decode Request Body ---
+	var formData FormData // Use FormData to receive potential new password
+	decoder := json.NewDecoder(r.Body)
+	err = decoder.Decode(&formData)
+	if err != nil { /* ... handle bad request ... */
+	}
+	defer r.Body.Close()
+
+	// --- Validation (Optional but recommended) ---
+	// Add validation similar to handleFormSubmit if needed (e.g., email format)
+	if formData.Email != "" && !isValidEmail(formData.Email) {
+		http.Error(w, "Invalid Email format", http.StatusBadRequest)
+		return
+	}
+	// Check for username/email conflicts *excluding the current user* (more complex query needed)
+
+	// --- Handle Password Update ---
+	// If a new password was provided in the form, hash it.
+	// Otherwise, PasswordHash remains empty in formData, and updateSubmission ignores it.
+	if strings.TrimSpace(formData.Password) != "" {
+		// Optional: Add password confirmation check if desired for updates too
+		if formData.Password != formData.PasswordConfirmation {
+			http.Error(w, "Passwords do not match", http.StatusBadRequest)
+			return
+		}
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(formData.Password), bcrypt.DefaultCost)
+		if err != nil { /* ... handle hashing error ... */
+		}
+		formData.PasswordHash = string(hashedPassword) // Set the hash to be saved
+	}
+
+	// --- Call Database Update ---
+	err = updateSubmission(id, formData)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			log.Printf("Update failed: Submission not found for ID %d", id)
+			http.Error(w, err.Error(), http.StatusNotFound) // 404 Not Found
+		} else if strings.Contains(err.Error(), "unique constraint") {
+			log.Printf("Update failed: Unique constraint violation for ID %d: %v", id, err)
+			// Determine if it was username or email if possible
+			http.Error(w, "Username or Email already taken.", http.StatusConflict) // 409 Conflict
+		} else {
+			log.Printf("Database error updating submission ID %d: %v", id, err)
+			http.Error(w, "Failed to update submission.", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// --- Success Response ---
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK) // 200 OK
+	// Optionally return the updated object or just a success message
+	json.NewEncoder(w).Encode(map[string]string{"message": "Submission updated successfully!"})
+
+	log.Printf("Successfully updated submission ID %d", id)
 }

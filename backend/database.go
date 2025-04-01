@@ -2,9 +2,11 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/lib/pq"
@@ -207,6 +209,171 @@ func checkUserExists(username, email string) (string, error) {
 
 	// If we get here without an error, a row was found, and existingField contains "username" or "email"
 	return existingField, nil
+}
+
+func getSubmissionById(id int) (*SubmissionData, error) {
+	query := `
+    SELECT id, name, last_name, username, email, phone_number,
+           location_branch, department, designation, basic_salary,
+           gross_salary, address, user_role, access_level
+    FROM form_submissions
+    WHERE id = $1`
+
+	s := &SubmissionData{}
+
+	//doing all this because those values can be null
+	var basicSalary sql.NullFloat64
+	var grossSalary sql.NullFloat64
+	var address sql.NullString
+	var PhoneNumber sql.NullString
+	var LocationBranch sql.NullString
+	var Department sql.NullString
+	var Designation sql.NullString
+	var UserRole sql.NullString
+	var AccessLevel sql.NullString
+
+	// here the order must match the query
+	err := db.QueryRow(query, id).Scan(
+		&s.Id, &s.Name, &s.LastName, &s.Username, &s.Email,
+		&PhoneNumber, &LocationBranch, &Department, &Designation,
+		&basicSalary, &grossSalary, &address, &UserRole, &AccessLevel,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("submission with ID %d not found", id)
+		}
+
+		log.Printf("Error querying submission by ID %d: %v", id, err)
+		return nil, fmt.Errorf("database query failed: %w", err)
+	}
+
+	return s, nil
+}
+
+func updateSubmission(id int, data FormData) error {
+	// Dynamically build the SET part of the query based on provided data.
+	// This prevents accidentally overwriting fields with empty values from the form
+	// if they weren't meant to be updated. Especially important for password.
+	setClauses := []string{}
+	args := []interface{}{}
+	argId := 1 // Argument counter for $ placeholders
+
+	// Add fields to update if they are not empty strings (customize logic as needed)
+	if data.Name != "" {
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", argId))
+		args = append(args, data.Name)
+		argId++
+	}
+	if data.LastName != "" {
+		setClauses = append(setClauses, fmt.Sprintf("last_name = $%d", argId))
+		args = append(args, data.LastName)
+		argId++
+	}
+	if data.Username != "" {
+		setClauses = append(setClauses, fmt.Sprintf("username = $%d", argId))
+		args = append(args, data.Username)
+		argId++
+	}
+	if data.Email != "" {
+		setClauses = append(setClauses, fmt.Sprintf("email = $%d", argId))
+		args = append(args, data.Email)
+		argId++
+	}
+	if data.PhoneNumber != "" {
+		setClauses = append(setClauses, fmt.Sprintf("phone_number = $%d", argId))
+		args = append(args, data.PhoneNumber)
+		argId++
+	}
+	if data.LocationBranch != "" {
+		setClauses = append(setClauses, fmt.Sprintf("location_branch = $%d", argId))
+		args = append(args, data.LocationBranch)
+		argId++
+	}
+	if data.Department != "" {
+		setClauses = append(setClauses, fmt.Sprintf("department = $%d", argId))
+		args = append(args, data.Department)
+		argId++
+	}
+	if data.Designation != "" {
+		setClauses = append(setClauses, fmt.Sprintf("designation = $%d", argId))
+		args = append(args, data.Designation)
+		argId++
+	}
+	// Add other fields like salary, address, user_role, access_level similarly if needed
+	// Handle numeric types carefully (maybe update if > 0?)
+	if data.BasicSalary != 0 {
+		setClauses = append(setClauses, fmt.Sprintf("basic_salary = $%d", argId))
+		args = append(args, data.BasicSalary)
+		argId++
+	}
+	if data.GrossSalary != 0 {
+		setClauses = append(setClauses, fmt.Sprintf("gross_salary = $%d", argId))
+		args = append(args, data.GrossSalary)
+		argId++
+	}
+	if data.Address != "" {
+		setClauses = append(setClauses, fmt.Sprintf("address = $%d", argId))
+		args = append(args, data.Address)
+		argId++
+	}
+	if data.UserRole != "" {
+		setClauses = append(setClauses, fmt.Sprintf("user_role = $%d", argId))
+		args = append(args, data.UserRole)
+		argId++
+	}
+	if data.AccessLevel != "" {
+		setClauses = append(setClauses, fmt.Sprintf("access_level = $%d", argId))
+		args = append(args, data.AccessLevel)
+		argId++
+	}
+
+	// --- Special handling for password ---
+	// Only update password_hash if a new password was provided (via data.PasswordHash)
+	if data.PasswordHash != "" {
+		setClauses = append(setClauses, fmt.Sprintf("password_hash = $%d", argId))
+		args = append(args, data.PasswordHash) // Add the HASHED password
+		argId++
+	}
+
+	// If no fields were provided to update (e.g., empty form submitted for edit)
+	if len(setClauses) == 0 {
+		log.Println("Update request received with no fields to update.")
+		// You might return nil (no-op) or an error depending on desired behavior
+		return fmt.Errorf("no fields provided for update")
+	}
+
+	// Add the ID for the WHERE clause as the last argument
+	args = append(args, id)
+
+	// Construct the final query
+	query := fmt.Sprintf("UPDATE form_submissions SET %s WHERE id = $%d",
+		strings.Join(setClauses, ", "), // e.g., "name = $1, email = $2"
+		argId)                          // e.g., "$3" for the ID
+
+	log.Printf("Executing Update Query: %s with args: %v", query, args)
+
+	// Execute the update query
+	result, err := db.Exec(query, args...) // Use variadic args
+	if err != nil {
+		log.Printf("Error executing update statement for ID %d: %v", id, err)
+		// Consider checking for unique constraint violation errors here too
+		return fmt.Errorf("database update failed: %w", err)
+	}
+
+	// Check if any row was actually updated ( verifies the ID existed)
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected after update for ID %d: %v", id, err)
+		return fmt.Errorf("failed to verify update: %w", err) // Return error if verification fails
+	}
+	if rowsAffected == 0 {
+		log.Printf("No row found with ID %d to update.", id)
+		return fmt.Errorf("submission with ID %d not found for update", id) // Return a "not found" error
+	}
+
+	log.Printf("Successfully updated submission with ID %d.", id)
+	return nil // Success
 }
 
 func closeDB() {

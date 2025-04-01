@@ -32,7 +32,7 @@ type SubmissionData struct {
 	BasicSalary    float64 `json:"basicSalary,omitempty"`
 	GrossSalary    float64 `json:"grossSalary,omitempty"`
 	Address        string  `json:"address,omitempty"`
-	Department     string  `json:"departmen,omitempty"`
+	Department     string  `json:"department,omitempty"`
 	Designation    string  `json:"designation,omitempty"`
 	UserRole       string  `json:"userRole,omitempty"`
 	AccessLevel    string  `json:"accessLevel,omitempty"`

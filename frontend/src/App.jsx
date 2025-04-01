@@ -54,7 +54,8 @@ function App() {
 
           {/* Route for the Form submission page */}
           <Route path="/form" element={<FormPage />} />
-
+          
+          <Route path="/form/:id" element={<FormPage />} /> {/* Reuse FormPage, it will detect the ID */}
           {/* 2. Add the Route for the Submission List page */}
           <Route path="/list" element={<SubmissionList />} />
 

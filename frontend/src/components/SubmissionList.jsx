@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import './SubmissionList.css'; // Create this CSS file next
 
 function SubmissionList() {
@@ -17,6 +18,8 @@ function SubmissionList() {
 
         // --- Read body ONCE as text ---
         const responseText = await response.text();
+
+        console.log(response)
 
         // --- Check status code AFTER reading text ---
         if (!response.ok) {
@@ -186,13 +189,18 @@ function SubmissionList() {
                 </td>
                 <td>{sub.id}</td>
                 <td>{sub.name}</td>
-                <td>{sub.lastName}</td>
+                <td>{sub.lastname}</td>
                 <td>{sub.username}</td>
                 <td>{sub.email}</td>
-                <td>{sub.phoneNumber}</td>
+                <td>{sub.phonenumber}</td>
                 <td>{sub.locationBranch}</td>
                 <td>{sub.department}</td>
                 <td>{sub.designation}</td>
+                <td>
+                  <Link to={`/form/${sub.id}`} className="edit-link">
+                    Edit
+                  </Link>              
+                </td>
                 {/* Add more <td> data cells if needed */}
               </tr>
             ))}

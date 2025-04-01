@@ -1,100 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './FormPage.css';
-
-// function FormPage() {
-//   const [formData, setFormData] = useState({
-//     name: '',
-//     phoneNumber: '',
-//   });
-//   const [message, setMessage] = useState(''); // To display success/error messages
-//   const [error, setError] = useState('');
-
-//   const handleChange = (e) => {
-//     const { name, value } = e.target;
-//     setFormData(prevState => ({
-//       ...prevState,
-//       [name]: value,
-//     }));
-//   };
-
-//   const handleSubmit = async (e) => {
-//     e.preventDefault(); // Prevent default form submission behavior
-//     setMessage(''); // Clear previous messages
-//     setError('');
-
-//     // Basic frontend validation
-//     if (!formData.name || !formData.phoneNumber) {
-//       setError('Please fill in both Name and Phone Number.');
-//       return;
-//     }
-
-//     console.log('Submitting form data:', formData);
-
-//     try {
-//       // Send data to the Go backend
-//       const response = await fetch('http://localhost:8080/submit', { // Ensure this matches your Go backend URL/port
-//         method: 'POST',
-//         headers: {
-//           'Content-Type': 'application/json',
-//         },
-//         body: JSON.stringify(formData),
-//       });
-
-//       const responseData = await response.json(); // Always try to parse JSON
-
-//       if (!response.ok) {
-//         // Handle HTTP errors (e.g., 400, 500)
-//         throw new Error(responseData.message || `HTTP error! Status: ${response.status}`);
-//       }
-
-//       // Success
-//       console.log('Success response:', responseData);
-//       setMessage(responseData.message); // Display success message from backend
-//       setFormData({ name: '', phoneNumber: '' }); // Clear the form
-
-//     } catch (error) {
-//       console.error('Error submitting form:', error);
-//       setError(`Submission failed: ${error.message}. Check console for details.`); // Display specific error
-//     }
-//   };
-
-//   return (
-//     <div>
-//       <h1>Submission Form</h1>
-//       <form onSubmit={handleSubmit}>
-//         <div>
-//           <label htmlFor="name">Name:</label>
-//           <input
-//             type="text"
-//             id="name"
-//             name="name"
-//             value={formData.name}
-//             onChange={handleChange}
-//             required // HTML5 validation
-//           />
-//         </div>
-//         <div>
-//           <label htmlFor="phoneNumber">Phone Number:</label>
-//           <input
-//             type="tel" // Use type="tel" for phone numbers
-//             id="phoneNumber"
-//             name="phoneNumber"
-//             value={formData.phoneNumber}
-//             onChange={handleChange}
-//             required // HTML5 validation
-//           />
-//         </div>
-//         <button type="submit">Submit</button>
-//       </form>
-
-//       {/* Display Success or Error Messages */}
-//       {message && <p style={{ color: 'green' }}>{message}</p>}
-//       {error && <p style={{ color: 'red' }}>{error}</p>}
-//     </div>
-//   );
-// }
-
-// export default FormPage;
+import { useParams, useNavigate } from 'react-router-dom';
 
 function FormPage() {
     const initialFormData = {
@@ -114,10 +20,79 @@ function FormPage() {
       userRole: '',
       accessLevel: '',
     };
-  
+
+    const { id } = useParams(); // Get the 'id' parameter from the URL, if present
+    const navigate = useNavigate(); // Hook to programmatically navigate
+    const isEditMode = Boolean(id); // Determine if we are in edit mode based on ID presence
+    const [isSubmitting, setIsSubmitting] = useState(false); // Tracks if submit/update is in progress
+    const [isLoading, setIsLoading] = useState(false); // For loading edit data (initial value might be true if you load immediately)
+
+
     const [formData, setFormData] = useState(initialFormData);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+
+    useEffect(() => {
+        // Only run if in edit mode (ID exists)
+        if (isEditMode) {
+            setIsLoading(true);
+            setError(null); // Clear previous errors
+            setMessage('');
+            console.log(`Edit mode: Fetching data for ID: ${id}`);
+
+            const fetchSubmissionData = async () => {
+                try {
+                  // Fetch data for the specific ID
+                  const response = await fetch(`/submission/${id}`); // GET request to /submissions/{id}
+                  const responseText = await response.text();
+
+                  if (!response.ok) {
+                    let errorMessage = `HTTP error! Status: ${response.status}`; try { const errorJson = JSON.parse(responseText); errorMessage = errorJson.message || errorJson.error || responseText || errorMessage; } catch (parseError) { errorMessage = responseText || errorMessage; } throw new Error(errorMessage);
+                  }
+
+                  try {
+                    const jsonData = JSON.parse(responseText);
+                    console.log("Raw data received:", jsonData); 
+                    // Populate form state with fetched data
+                    // Ensure field names match exactly
+                    setFormData({
+                      name: jsonData.name || '',
+                      lastName: jsonData.lastname || '',
+                      username: jsonData.username || '',
+                      email: jsonData.email || '',
+                      phoneNumber: jsonData.phonenumber || '',
+                      locationBranch: jsonData.locationBranch || '',
+                      department: jsonData.department || '',
+                      designation: jsonData.designation || '',
+                      // Reset password fields for edit mode - user must re-enter if changing
+                      password: '',
+                      passwordConfirmation: '',
+                      // Include other fields if they exist in SubmissionInfo and the form
+                      basicSalary: jsonData.basicSalary || '', // Assuming these come back
+                      grossSalary: jsonData.grossSalary || '',
+                      address: jsonData.address || '',
+                      userRole: jsonData.userRole || '',
+                      accessLevel: jsonData.accessLevel || '',
+                    });
+                  } catch (parseError) { /* ... handle invalid JSON from GET /submissions/{id} ... */ }
+
+                } catch (error) {
+                    console.error("Failed to fetch submission data:", error);
+                    setError(`Failed to load data: ${error.message}. Please go back to the list.`);
+                    // Disable form or redirect? For now, just show error.
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            fetchSubmissionData();
+        } else {
+            // If not in edit mode, ensure form is reset to initial state
+            setFormData(initialFormData);
+            setMessage('');
+            setError('');
+        }
+    }, [id, isEditMode]); // Re-run effect if id changes (navigating between edits)
   
     const handleChange = (e) => {
       const { name, value, type } = e.target;
@@ -145,11 +120,45 @@ function FormPage() {
           return;
         }
       }
-  
-      if (formData.password !== formData.passwordConfirmation) {
-        setError('Passwords do not match.');
-        return;
-      }
+
+      for (const field of requiredFields) { /* ... check non-password fields ... */ }
+      
+      // Password validation - only require if NOT in edit mode OR if password field has been touched
+      if (!isEditMode) {
+        // ADD mode: Password and Confirmation are strictly required
+        if (!formData.password || !formData.password.trim()) {
+            setError("Please fill in the 'password' field.");
+            setIsSubmitting(false);
+            return;
+        }
+        if (!formData.passwordConfirmation || !formData.passwordConfirmation.trim()) {
+            setError("Please fill in the 'Confirm Password' field.");
+            setIsSubmitting(false);
+            return;
+        }
+        if (formData.password !== formData.passwordConfirmation) {
+            setError('Passwords do not match.');
+            setIsSubmitting(false);
+            return;
+        }
+      } else {
+          // EDIT mode: Check only if user intends to change password
+          if (formData.password || formData.passwordConfirmation) {
+            // If *either* field is filled, *both* must be filled and match
+            if (!formData.password || !formData.passwordConfirmation) {
+              setError("Please fill in *both* Password and Confirm Password fields if changing the password.");
+              setIsSubmitting(false);
+              return;
+            }
+            if (formData.password !== formData.passwordConfirmation) {
+              setError('Passwords do not match.');
+              setIsSubmitting(false);
+              return;
+            }
+            // If they match and are filled, the password will be included in dataToSend later
+          }
+          // If both password fields are empty in edit mode, we proceed without password validation errors.
+        }
   
       // Basic email format check (can be more robust)
       if (!/\S+@\S+\.\S+/.test(formData.email)) {
@@ -158,76 +167,63 @@ function FormPage() {
       }
   
       // Convert salary fields to numbers before sending (or handle on backend)
-      const dataToSend = {
-        ...formData,
-        // Use parseFloat, handle potential NaN if input is invalid
-        basicSalary: formData.basicSalary ? parseFloat(formData.basicSalary) : 0,
-        grossSalary: formData.grossSalary ? parseFloat(formData.grossSalary) : 0,
-      };
-  
-      console.log('Submitting form data:', dataToSend);
-  
-      try {
-        // const response = await fetch('http://localhost:8080/submit', {
-        const response = await fetch('/submission', { //for docker
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(dataToSend),
-        });
-  
-        // Try to parse JSON regardless of status code for potential error messages
-        let responseData;
-        try {
-           responseData = await response.json();
-        } catch (jsonError) {
-           // If JSON parsing fails, use the raw response text
-           const textResponse = await response.text();
-           throw new Error(textResponse || `HTTP error! Status: ${response.status}`);
-        }
-  
-  
-        if (!response.ok) {
-          // Use message from backend JSON response if available
-          
-          throw new Error(responseData.message || responseData.error || `HTTP error! Status: ${response.status}`);
-          // let errorMessage = `HTTP error! Status: ${response.status}`; // Default error message
-          // try {
-          //   // Attempt to parse the response text as JSON - maybe backend sent structured error
-          //   const errorJson = JSON.parse(responseText);
-          //   errorMessage = errorJson.message || errorJson.error || responseText || errorMessage;
-          // } catch (parseError) {
-          //   // If parsing failed, use the raw text if available
-          //   errorMessage = responseText || errorMessage;
-          // }
-
-          // // --- 👇👇👇 HANDLE 409 CONFLICT SPECIFICALLY 👇👇👇 ---
-          // if (response.status === 409) {
-          //    // Use the specific message from backend (e.g., "Username already exists...")
-          //    setError(errorMessage);
-          // } else {
-          //    // Handle other client/server errors (400, 500, etc.)
-          //    setError(`Submission failed: ${errorMessage}.`);
-          // }
-          // // Throw error to prevent success logic from running
-          // throw new Error(errorMessage);
-        }
-  
-        // Success
-        console.log('Success response:', responseData);
-        setMessage(responseData.message || 'Form submitted successfully!');
-        setFormData(initialFormData); // Clear the form on success
-  
-      } catch (error) {
-        console.error('Error submitting form:', error);
-        setError(`Submission failed: ${error.message}.`);
+      // const dataToSend = {
+      //   ...formData,
+      //   // Use parseFloat, handle potential NaN if input is invalid
+      //   basicSalary: formData.basicSalary ? parseFloat(formData.basicSalary) : 0,
+      //   grossSalary: formData.grossSalary ? parseFloat(formData.grossSalary) : 0,
+      // };
+      const dataToSend = { ...formData };
+      //delete dataToSend.passwordConfirmation; // Always remove confirmation
+      dataToSend.basicSalary = dataToSend.basicSalary ? parseFloat(dataToSend.basicSalary) : 0;
+      dataToSend.grossSalary = dataToSend.grossSalary ? parseFloat(dataToSend.grossSalary) : 0;
+      // If password field is empty during edit, don't send it or handle on backend
+      if (isEditMode && dataToSend.password === '') {
+          delete dataToSend.password; // Don't send empty password for update
       }
+
+      const url = isEditMode ? `/submission/${id}` : '/submit';
+      const method = isEditMode ? 'PUT' : 'POST';
+      console.log(`>>> Sending ${method} to ${url} with PAYLOAD:`, JSON.stringify(dataToSend, null, 2));
+
+      try {
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(dataToSend),
+        });
+        const responseText = await response.text();
+
+        if (!response.ok) { /* ... (handle non-OK status, including 409 for edit) ... */
+             let errorMessage = `HTTP error! Status: ${response.status}`; try { const errorJson = JSON.parse(responseText); errorMessage = errorJson.message || errorJson.error || responseText || errorMessage; } catch (parseError) { errorMessage = responseText || errorMessage; } if (response.status === 409) { setError(errorMessage || "Username or Email already exists."); } else { setError(`${isEditMode ? 'Update' : 'Submission'} failed: ${errorMessage}.`); } throw new Error(errorMessage);
+        }
+
+        // --- Success ---
+        let successMessage = isEditMode ? 'Submission updated successfully!' : 'Form submitted successfully!';
+        // ... (try parsing JSON success message as before) ...
+        setMessage(successMessage);
+
+        if (isEditMode) {
+            // Optional: Navigate back to the list after successful update
+            navigate('/list');
+        } else {
+            setFormData(initialFormData); // Clear form only on successful ADD
+        }
+
+      } catch (error) { /* ... (catch block as before, log error) ... */
+          console.error(`Caught error during ${isEditMode ? 'update' : 'submission'}:`, error.message);
+        } finally {
+            setIsSubmitting(false);
+          }
     };
   
     return (
       <div className="form-container">
-        <h1>Employee Information Form</h1>
+        <h1>{isEditMode ? 'Edit Employee Information' : 'Add Employee Information'}</h1>
+        {/* Display Messages */}
+        {message && <p className="form-message success">{message}</p>}
+        {error && <p className="form-message error">{error}</p>}
+
         <form onSubmit={handleSubmit} noValidate> {/* noValidate disables browser default validation bubbles */}
           <div className="form-grid">
   
@@ -249,13 +245,28 @@ function FormPage() {
               <input type="email" id="email" name="email" value={formData.email} onChange={handleChange} required />
             </div>
             <div className="form-group">
-              <label htmlFor="password">Password *</label>
-              <input type="password" id="password" name="password" value={formData.password} onChange={handleChange} required />
+              <label htmlFor="password">Password {isEditMode ? '(Leave blank to keep unchanged)' : '*'}</label>
+              <input
+                  type="password"
+                  id="password"
+                  name="password" // <-- NAME should be "password"
+                  value={formData.password} // <-- VALUE should be formData.password
+                  onChange={handleChange}
+                  required={!isEditMode} // Only required on add
+              />
             </div>
             <div className="form-group">
-              <label htmlFor="passwordConfirmation">Confirm Password *</label>
-              <input type="password" id="passwordConfirmation" name="passwordConfirmation" value={formData.passwordConfirmation} onChange={handleChange} required />
-            </div>
+                <label htmlFor="passwordConfirmation">Confirm Password {isEditMode && !formData.password ? '' : '*'}</label>
+                <input
+                    type="password"
+                    id="passwordConfirmation"
+                    name="passwordConfirmation" // <-- NAME should be "passwordConfirmation"
+                    value={formData.passwordConfirmation} // <-- VALUE should be formData.passwordConfirmation
+                    onChange={handleChange}
+                    // Required only if adding OR if editing and the main password field has content
+                    required={!isEditMode || (isEditMode && !!formData.password)}
+              />
+              </div>
   
             {/* --- Optional Fields --- */}
              <div className="form-group">
@@ -298,7 +309,10 @@ function FormPage() {
               <input type="text" id="accessLevel" name="accessLevel" value={formData.accessLevel} onChange={handleChange} />
             </div>
   
-            <button type="submit">Submit Employee Data</button>
+            {/* <button type="submit">Submit Employee Data</button> */}
+            <button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Saving...' : (isEditMode ? 'Update Employee Data' : 'Submit Employee Data')}
+            </button>
   
           </div>{/* end form-grid */}
         </form>

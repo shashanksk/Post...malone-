@@ -61,3 +61,12 @@
   .submission-table tr:hover {
     background-color: #eef; /* Highlight on hover */
   }
+
+.edit-link {
+  text-decoration: none;
+  color: #007bff;
+  margin-left: 5px;
+}
+.edit-link:hover {
+ text-decoration: underline;
+}
