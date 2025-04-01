@@ -113,10 +113,11 @@ function FormPage() {
       setError('');
   
       // --- Frontend Validation ---
-      const requiredFields = ['name', 'lastName', 'username', 'email', 'password', 'passwordConfirmation'];
+      const requiredFields = ['name', 'lastName', 'username', 'email'];
       for (const field of requiredFields) {
         if (!formData[field] || !formData[field].trim()) {
           setError(`Please fill in the '${field}' field.`);
+          setIsSubmitting(false);
           return;
         }
       }
