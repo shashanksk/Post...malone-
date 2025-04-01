@@ -149,6 +149,7 @@ func getSubmissions() ([]SubmissionData, error) {
 		log.Printf("Error during rows iteration %v", err)
 		return nil, fmt.Errorf("error iterating over submissions: %w", err)
 	}
+
 	return submissions, nil
 
 }
@@ -222,21 +223,32 @@ func getSubmissionById(id int) (*SubmissionData, error) {
 	s := &SubmissionData{}
 
 	//doing all this because those values can be null
+	var phoneNumber sql.NullString
+	var locationBranch sql.NullString
+	var department sql.NullString
+	var designation sql.NullString
 	var basicSalary sql.NullFloat64
 	var grossSalary sql.NullFloat64
 	var address sql.NullString
-	var PhoneNumber sql.NullString
-	var LocationBranch sql.NullString
-	var Department sql.NullString
-	var Designation sql.NullString
-	var UserRole sql.NullString
-	var AccessLevel sql.NullString
+	var userRole sql.NullString
+	var accessLevel sql.NullString
 
 	// here the order must match the query
 	err := db.QueryRow(query, id).Scan(
-		&s.Id, &s.Name, &s.LastName, &s.Username, &s.Email,
-		&PhoneNumber, &LocationBranch, &Department, &Designation,
-		&basicSalary, &grossSalary, &address, &UserRole, &AccessLevel,
+		&s.Id,           // Directly into struct field
+		&s.Name,         // Directly into struct field
+		&s.LastName,     // Directly into struct field (json: "lastname")
+		&s.Username,     // Directly into struct field
+		&s.Email,        // Directly into struct field
+		&phoneNumber,    // Into local sql.NullString
+		&locationBranch, // Into local sql.NullString
+		&department,     // Into local sql.NullString
+		&designation,    // Into local sql.NullString
+		&basicSalary,    // Into local sql.NullFloat64
+		&grossSalary,    // Into local sql.NullFloat64
+		&address,        // Into local sql.NullString
+		&userRole,       // Into local sql.NullString
+		&accessLevel,    // Into local sql.NullString
 	)
 
 	if err != nil {
@@ -246,6 +258,34 @@ func getSubmissionById(id int) (*SubmissionData, error) {
 
 		log.Printf("Error querying submission by ID %d: %v", id, err)
 		return nil, fmt.Errorf("database query failed: %w", err)
+	}
+
+	if phoneNumber.Valid {
+		s.PhoneNumber = phoneNumber.String // Assign string value (json: "phonenumber")
+	}
+	if locationBranch.Valid {
+		s.LocationBranch = locationBranch.String // Assign string value (json: "locationBranch")
+	}
+	if department.Valid {
+		s.Department = department.String // Assign string value (json: "departmen" - TYPO)
+	}
+	if designation.Valid {
+		s.Designation = designation.String // Assign string value (json: "designation")
+	}
+	if basicSalary.Valid {
+		s.BasicSalary = basicSalary.Float64 // Assign float64 value (json: "basicSalary")
+	}
+	if grossSalary.Valid {
+		s.GrossSalary = grossSalary.Float64 // Assign float64 value (json: "grossSalary")
+	}
+	if address.Valid {
+		s.Address = address.String // Assign string value (json: "address")
+	}
+	if userRole.Valid {
+		s.UserRole = userRole.String // Assign string value (json: "userRole")
+	}
+	if accessLevel.Valid {
+		s.AccessLevel = accessLevel.String // Assign string value (json: "accessLevel")
 	}
 
 	return s, nil
