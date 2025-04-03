@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import './FormPage.css';
 import { useParams, useNavigate } from 'react-router-dom';
 
@@ -24,13 +24,18 @@ function FormPage() {
     const { id } = useParams(); // Get the 'id' parameter from the URL, if present
     const navigate = useNavigate(); // Hook to programmatically navigate
     const isEditMode = Boolean(id); // Determine if we are in edit mode based on ID presence
+    
     const [isSubmitting, setIsSubmitting] = useState(false); // Tracks if submit/update is in progress
     const [isLoading, setIsLoading] = useState(false); // For loading edit data (initial value might be true if you load immediately)
-
-
     const [formData, setFormData] = useState(initialFormData);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
+
+    // --- NEW State for File Upload ---
+    const [selectedFile, setSelectedFile] = useState(null);
+    const [isUploading, setIsUploading] = useState(false);
+    const [uploadResult, setUploadResult] = useState(null); // To store results { processedRows, successfulInserts, failedInserts, errors: [] }
+    const fileInputRef = useRef(null);
 
     useEffect(() => {
         // Only run if in edit mode (ID exists)
@@ -105,13 +110,17 @@ function FormPage() {
         ...prevState,
         [name]: value,
       }));
+      setUploadResult(null);
+      setSelectedFile(null);
     };
   
     const handleSubmit = async (e) => {
       e.preventDefault();
       setMessage('');
       setError('');
-  
+      setUploadResult(null); 
+      setIsSubmitting(true);
+
       // --- Frontend Validation ---
       const requiredFields = ['name', 'lastName', 'username', 'email'];
       for (const field of requiredFields) {
@@ -180,7 +189,7 @@ function FormPage() {
       dataToSend.grossSalary = dataToSend.grossSalary ? parseFloat(dataToSend.grossSalary) : 0;
       // If password field is empty during edit, don't send it or handle on backend
       if (isEditMode && dataToSend.password === '') {
-          delete dataToSend.password; // Don't send empty password for update
+        delete dataToSend.password; // Don't send empty password for update
       }
 
       const url = isEditMode ? `/submission/${id}` : '/submit';
@@ -189,14 +198,18 @@ function FormPage() {
 
       try {
         const response = await fetch(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(dataToSend),
+          method: method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dataToSend),
         });
         const responseText = await response.text();
 
         if (!response.ok) { /* ... (handle non-OK status, including 409 for edit) ... */
-             let errorMessage = `HTTP error! Status: ${response.status}`; try { const errorJson = JSON.parse(responseText); errorMessage = errorJson.message || errorJson.error || responseText || errorMessage; } catch (parseError) { errorMessage = responseText || errorMessage; } if (response.status === 409) { setError(errorMessage || "Username or Email already exists."); } else { setError(`${isEditMode ? 'Update' : 'Submission'} failed: ${errorMessage}.`); } throw new Error(errorMessage);
+          let errorMessage = `HTTP error! Status: ${response.status}`; 
+          try { const errorJson = JSON.parse(responseText); errorMessage = errorJson.message || errorJson.error || responseText || errorMessage; } 
+          catch (parseError) { errorMessage = responseText || errorMessage; } if (response.status === 409) { setError(errorMessage || "Username or Email already exists."); } 
+          else { setError(`${isEditMode ? 'Update' : 'Submission'} failed: ${errorMessage}.`); } 
+          throw new Error(errorMessage);
         }
 
         // --- Success ---
@@ -205,10 +218,10 @@ function FormPage() {
         setMessage(successMessage);
 
         if (isEditMode) {
-            // Optional: Navigate back to the list after successful update
-            navigate('/list');
+          // Optional: Navigate back to the list after successful update
+          setTimeout(() => navigate('/list'), 1500);
         } else {
-            setFormData(initialFormData); // Clear form only on successful ADD
+          setFormData(initialFormData); // Clear form only on successful ADD
         }
 
       } catch (error) { /* ... (catch block as before, log error) ... */
@@ -217,57 +230,145 @@ function FormPage() {
             setIsSubmitting(false);
           }
     };
-  
-    return (
-      <div className="form-container">
-        <h1>{isEditMode ? 'Edit Employee Information' : 'Add Employee Information'}</h1>
-        {/* Display Messages */}
-        {message && <p className="form-message success">{message}</p>}
-        {error && <p className="form-message error">{error}</p>}
 
-        <form onSubmit={handleSubmit} noValidate> {/* noValidate disables browser default validation bubbles */}
-          <div className="form-grid">
+    const handleFileChange = (event) => {
+      const file = event.target.files[0];
+      if (file && file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+          setSelectedFile(file);
+          setError(''); // Clear previous errors
+          setMessage('');
+          setUploadResult(null); // Clear previous results
+      } else {
+          setSelectedFile(null);
+          setError('Please select a valid .xlsx file.');
+          setUploadResult(null);
+      }
+      // Reset the input value so the onChange event fires even if the same file is selected again
+       if (fileInputRef.current) {
+           fileInputRef.current.value = '';
+       }
+  };
+
+  const handleUploadClick = () => {
+      // Trigger the hidden file input
+      if (fileInputRef.current) {
+          fileInputRef.current.click();
+      }
+  };
+
+  const handleUploadSubmit = async () => {
+      if (!selectedFile) {
+          setError('Please select an Excel (.xlsx) file to upload.');
+          return;
+      }
+
+      setIsUploading(true);
+      setError('');
+      setMessage('');
+      setUploadResult(null);
+
+      const uploadFormData = new FormData(); // Use browser's FormData for file uploads
+      uploadFormData.append('excelFile', selectedFile); // Key MUST match backend r.FormFile("excelFile")
+
+      console.log(`>>> Sending POST to /upload/excel with file: ${selectedFile.name}`);
+
+      try {
+          const response = await fetch('/upload/excel', {
+              method: 'POST',
+              // DO NOT set Content-Type header manually for FormData,
+              // the browser does it correctly with the boundary.
+              body: uploadFormData,
+          });
+
+          const responseText = await response.text();
+
+          if (!response.ok) {
+              let errorMessage = `Upload failed! Status: ${response.status}`;
+               try {
+                   const errorJson = JSON.parse(responseText);
+                   errorMessage = errorJson.message || errorJson.error || responseText || errorMessage;
+               } catch (parseError) {
+                  errorMessage = responseText || errorMessage;
+               }
+               setError(errorMessage);
+               setUploadResult(null); // Clear results on failure
+               throw new Error(errorMessage);
+          }
+
+          // --- Upload Success (even if some rows failed validation on backend) ---
+           try {
+               const resultData = JSON.parse(responseText);
+               setUploadResult(resultData); // Store detailed results
+               setMessage(`Upload processed. See results below.`); // General success message
+               setSelectedFile(null); // Clear file selection after successful processing
+           } catch (parseError) {
+               console.error("Error parsing upload response JSON:", parseError);
+               setError("Upload completed, but couldn't parse the result details.");
+               setUploadResult(null);
+           }
+
+
+      } catch (error) {
+           console.error("Error during Excel upload:", error.message);
+          // Error state is already set in the !response.ok block or here if fetch itself failed
+           if (!error) { // If fetch itself failed (network error)
+               setError(`Upload failed: ${error.message}`);
+           }
+      } finally {
+          setIsUploading(false);
+      }
+  };
   
-            {/* --- Required Fields --- */}
-            <div className="form-group">
-              <label htmlFor="name">First Name *</label>
-              <input type="text" id="name" name="name" value={formData.name} onChange={handleChange} required />
-            </div>
-            <div className="form-group">
-              <label htmlFor="lastName">Last Name *</label>
-              <input type="text" id="lastName" name="lastName" value={formData.lastName} onChange={handleChange} required />
-            </div>
-            <div className="form-group">
-              <label htmlFor="username">Username *</label>
-              <input type="text" id="username" name="username" value={formData.username} onChange={handleChange} required />
-            </div>
-            <div className="form-group">
-              <label htmlFor="email">Email ID *</label>
-              <input type="email" id="email" name="email" value={formData.email} onChange={handleChange} required />
-            </div>
-            <div className="form-group">
-              <label htmlFor="password">Password {isEditMode ? '(Leave blank to keep unchanged)' : '*'}</label>
+  return (
+    <div className="form-container">
+      <h1>{isEditMode ? 'Edit Employee Information' : 'Add Employee Information'}</h1>
+      {/* Display Messages */}
+      {message && <p className="form-message success">{message}</p>}
+      {error && <p className="form-message error">{error}</p>}
+
+      <form onSubmit={handleSubmit} noValidate> {/* noValidate disables browser default validation bubbles */}
+        <div className="form-grid">
+
+          {/* --- Required Fields --- */}
+          <div className="form-group">
+            <label htmlFor="name">First Name *</label>
+            <input type="text" id="name" name="name" value={formData.name} onChange={handleChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="lastName">Last Name *</label>
+            <input type="text" id="lastName" name="lastName" value={formData.lastName} onChange={handleChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="username">Username *</label>
+            <input type="text" id="username" name="username" value={formData.username} onChange={handleChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="email">Email ID *</label>
+            <input type="email" id="email" name="email" value={formData.email} onChange={handleChange} required />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password">Password {isEditMode ? '(Leave blank to keep unchanged)' : '*'}</label>
+            <input
+                type="password"
+                id="password"
+                name="password" // <-- NAME should be "password"
+                value={formData.password} // <-- VALUE should be formData.password
+                onChange={handleChange}
+                required={!isEditMode} // Only required on add
+            />
+          </div>
+          <div className="form-group">
+              <label htmlFor="passwordConfirmation">Confirm Password {isEditMode && !formData.password ? '' : '*'}</label>
               <input
                   type="password"
-                  id="password"
-                  name="password" // <-- NAME should be "password"
-                  value={formData.password} // <-- VALUE should be formData.password
+                  id="passwordConfirmation"
+                  name="passwordConfirmation" // <-- NAME should be "passwordConfirmation"
+                  value={formData.passwordConfirmation} // <-- VALUE should be formData.passwordConfirmation
                   onChange={handleChange}
-                  required={!isEditMode} // Only required on add
-              />
+                  // Required only if adding OR if editing and the main password field has content
+                  required={!isEditMode || (isEditMode && !!formData.password)}
+            />
             </div>
-            <div className="form-group">
-                <label htmlFor="passwordConfirmation">Confirm Password {isEditMode && !formData.password ? '' : '*'}</label>
-                <input
-                    type="password"
-                    id="passwordConfirmation"
-                    name="passwordConfirmation" // <-- NAME should be "passwordConfirmation"
-                    value={formData.passwordConfirmation} // <-- VALUE should be formData.passwordConfirmation
-                    onChange={handleChange}
-                    // Required only if adding OR if editing and the main password field has content
-                    required={!isEditMode || (isEditMode && !!formData.password)}
-              />
-              </div>
   
             {/* --- Optional Fields --- */}
              <div className="form-group">
@@ -317,8 +418,58 @@ function FormPage() {
   
           </div>{/* end form-grid */}
         </form>
-  
+
+        <hr className="separator" /> {/* Separator */}
         {/* Display Success or Error Messages */}
+        <div className="upload-section">
+          <h2>Or Upload via Excel</h2>
+            <p className="upload-instructions">
+              Select an .xlsx file with employee data. Ensure columns match the required format (Headers: FirstName, LastName, Username, Email, Password, [Optional Fields]...).
+            </p>
+
+            {/* Hidden file input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              style={{ display: 'none' }} // Hide the default input
+              disabled={isUploading || isSubmitting || isLoading}
+            />
+
+            {/* Button to trigger file selection */}
+            <button onClick={handleUploadClick} disabled={isUploading || isSubmitting || isLoading} className="button-secondary">
+              Choose Excel File (.xlsx)
+            </button>
+
+            {selectedFile && <span className="file-name">Selected: {selectedFile.name}</span>}
+
+            {/* Button to trigger the actual upload */}
+            <button onClick={handleUploadSubmit} disabled={!selectedFile || isUploading || isSubmitting || isLoading} className="button-upload">
+              {isUploading ? 'Uploading...' : 'Upload Data from File'}
+            </button>
+          </div>
+
+          {/* Display Upload Results */}
+          {uploadResult && (
+            <div className="upload-results">
+              <h3>Upload Summary</h3>
+              <p>Processed Rows: {uploadResult.processedRows}</p>
+              <p className="success">Successful Inserts: {uploadResult.successfulInserts}</p>
+              <p className={uploadResult.failedInserts > 0 ? 'error' : ''}>Failed Rows: {uploadResult.failedInserts}</p>
+              {uploadResult.errors && uploadResult.errors.length > 0 && (
+                <>
+                  <h4>Errors:</h4>
+                  <ul className="error-list">
+                    {uploadResult.errors.map((err, index) => (
+                      <li key={index}>{err}</li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </div>
+          )}
+
         {message && <p className="form-message success">{message}</p>}
         {error && <p className="form-message error">{error}</p>}
       </div>

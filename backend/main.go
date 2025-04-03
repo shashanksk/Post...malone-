@@ -40,6 +40,7 @@ func main() {
 	router.HandleFunc("/submission", handleDeleteSubmissions).Methods("DELETE", "OPTIONS")
 	router.HandleFunc("/submission/{id:[0-9]+}", handleGetSingleSubmission).Methods("GET", "OPTIONS")
 	router.HandleFunc("/submission/{id:[0-9]+}", handleUpdateSubmission).Methods("PUT", "OPTIONS")
+	router.HandleFunc("/upload/excel", handleExcelUpload).Methods("POST", "OPTIONS")
 	// CORS Configuration
 	c := cors.New(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:5173", "http://localhost"}, // Vite's default port

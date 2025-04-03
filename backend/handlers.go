@@ -60,8 +60,284 @@ import (
 	"strings" // For basic validation checks
 
 	"github.com/gorilla/mux"
+	"github.com/xuri/excelize/v2"
 	"golang.org/x/crypto/bcrypt"
 )
+
+var expectedHeaders = map[string]string{
+	"firstname":       "name",
+	"first name":      "name", // Allow variations
+	"name":            "name",
+	"lastname":        "lastName",
+	"last name":       "lastName",
+	"username":        "username",
+	"email":           "email",
+	"email id":        "email",
+	"password":        "password", // Expect plain text password in Excel
+	"phonenumber":     "phoneNumber",
+	"phone number":    "phoneNumber",
+	"locationbranch":  "locationBranch",
+	"location branch": "locationBranch",
+	"basicsalary":     "basicSalary",
+	"basic salary":    "basicSalary",
+	"grosssalary":     "grossSalary",
+	"gross salary":    "grossSalary",
+	"address":         "address",
+	"department":      "department",
+	"designation":     "designation",
+	"userrole":        "userRole",
+	"user role":       "userRole",
+	"accesslevel":     "accessLevel",
+	"access level":    "accessLevel",
+	// Add other variations if needed
+}
+
+type UploadResult struct {
+	ProcessedRows     int      `json:"processedRows"`
+	SuccessfulInserts int      `json:"successfulInserts"`
+	FailedInserts     int      `json:"failedInserts"`
+	Errors            []string `json:"errors"`
+}
+
+func handleExcelUpload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("Handling POST request for /upload/excel")
+
+	result := UploadResult{}
+	var rowErrors []string
+
+	// --- Parse Multipart Form Data ---
+	// Adjust max memory (e.g., 10 << 20 for 10 MB) based on expected file size
+	err := r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		log.Printf("Error parsing multipart form: %v", err)
+		http.Error(w, "Error processing file upload. Check file size.", http.StatusBadRequest)
+		return
+	}
+
+	// --- Get the File ---
+	file, fileHeader, err := r.FormFile("excelFile") // "excelFile" MUST match the key used in frontend FormData
+	if err != nil {
+		log.Printf("Error retrieving file from form: %v", err)
+		http.Error(w, "Could not retrieve file. Make sure 'excelFile' is included.", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	log.Printf("Received file: %s, Size: %d bytes", fileHeader.Filename, fileHeader.Size)
+
+	// Optional: Validate file type by extension or MIME type if needed
+	if !strings.HasSuffix(strings.ToLower(fileHeader.Filename), ".xlsx") {
+		http.Error(w, "Invalid file type. Please upload an .xlsx file.", http.StatusBadRequest)
+		return
+	}
+
+	// --- Read Excel File ---
+	f, err := excelize.OpenReader(file)
+	if err != nil {
+		log.Printf("Error opening excel file %s: %v", fileHeader.Filename, err)
+		http.Error(w, "Error reading the uploaded Excel file.", http.StatusInternalServerError)
+		return
+	}
+	defer func() {
+		// Close the spreadsheet.
+		if err := f.Close(); err != nil {
+			log.Printf("Error closing excel file: %v", err)
+		}
+	}()
+
+	// --- Process Rows (Assuming data is on the first sheet) ---
+	sheetName := f.GetSheetName(0) // Get the first sheet's name
+	if sheetName == "" {
+		http.Error(w, "Excel file seems empty or has no sheets.", http.StatusBadRequest)
+		return
+	}
+	log.Printf("Processing sheet: %s", sheetName)
+
+	rows, err := f.GetRows(sheetName)
+	if err != nil {
+		log.Printf("Error getting rows from sheet %s: %v", sheetName, err)
+		http.Error(w, "Error reading rows from the Excel sheet.", http.StatusInternalServerError)
+		return
+	}
+
+	if len(rows) <= 1 {
+		http.Error(w, "Excel file contains no data rows (only header or empty).", http.StatusBadRequest)
+		return
+	}
+
+	// --- Map Headers ---
+	headerRow := rows[0]
+	columnIndex := make(map[string]int)   // Map struct field name -> column index
+	foundHeaders := make(map[string]bool) // Track which expected headers were found
+
+	for idx, headerCell := range headerRow {
+		normalizedHeader := strings.ToLower(strings.TrimSpace(headerCell))
+		if fieldName, ok := expectedHeaders[normalizedHeader]; ok {
+			columnIndex[fieldName] = idx
+			foundHeaders[fieldName] = true
+			log.Printf("Mapped header '%s' (column %d) to field '%s'", headerCell, idx, fieldName)
+		}
+	}
+
+	// --- Validate Required Headers ---
+	// Define which fields are absolutely required from the Excel file
+	requiredFields := []string{"name", "lastName", "username", "email", "password"}
+	missingHeaders := []string{}
+	for _, reqField := range requiredFields {
+		if !foundHeaders[reqField] {
+			// Try to find the original header name for a better error message
+			originalHeader := reqField
+			for excelHeader, field := range expectedHeaders {
+				if field == reqField {
+					originalHeader = excelHeader // Use the first match found
+					break
+				}
+			}
+			missingHeaders = append(missingHeaders, originalHeader)
+		}
+	}
+
+	if len(missingHeaders) > 0 {
+		errMsg := fmt.Sprintf("Missing required columns in Excel file: %s", strings.Join(missingHeaders, ", "))
+		log.Printf(errMsg)
+		http.Error(w, errMsg, http.StatusBadRequest)
+		return
+	}
+
+	// --- Process Data Rows ---
+	result.ProcessedRows = len(rows) - 1 // Exclude header row
+
+	for i, row := range rows {
+		if i == 0 {
+			continue // Skip header row
+		}
+		excelRowNum := i + 1 // For user-friendly error messages (1-based index)
+
+		formData := FormData{} // Create a new FormData for each row
+
+		// Helper function to get cell value safely
+		getCellValue := func(fieldName string) string {
+			if idx, ok := columnIndex[fieldName]; ok {
+				if idx < len(row) {
+					return strings.TrimSpace(row[idx])
+				}
+			}
+			return "" // Return empty string if column not found or row is too short
+		}
+
+		// --- Populate formData from row ---
+		formData.Name = getCellValue("name")
+		formData.LastName = getCellValue("lastName")
+		formData.Username = getCellValue("username")
+		formData.Email = getCellValue("email")
+		formData.Password = getCellValue("password") // Get plain text password
+		formData.PhoneNumber = getCellValue("phoneNumber")
+		formData.LocationBranch = getCellValue("locationBranch")
+		formData.Address = getCellValue("address")
+		formData.Department = getCellValue("department")
+		formData.Designation = getCellValue("designation")
+		formData.UserRole = getCellValue("userRole")
+		formData.AccessLevel = getCellValue("accessLevel")
+
+		// Convert numeric fields (handle errors)
+		basicSalaryStr := getCellValue("basicSalary")
+		if basicSalaryStr != "" {
+			salary, err := strconv.ParseFloat(basicSalaryStr, 64)
+			if err != nil {
+				rowErrors = append(rowErrors, fmt.Sprintf("Row %d: Invalid Basic Salary value '%s'. Skipping.", excelRowNum, basicSalaryStr))
+				continue // Skip this row
+			}
+			formData.BasicSalary = salary
+		}
+		grossSalaryStr := getCellValue("grossSalary")
+		if grossSalaryStr != "" {
+			salary, err := strconv.ParseFloat(grossSalaryStr, 64)
+			if err != nil {
+				rowErrors = append(rowErrors, fmt.Sprintf("Row %d: Invalid Gross Salary value '%s'. Skipping.", excelRowNum, grossSalaryStr))
+				continue // Skip this row
+			}
+			formData.GrossSalary = salary
+		}
+
+		// --- Validate Row Data ---
+		if formData.Name == "" || formData.LastName == "" || formData.Username == "" || formData.Email == "" || formData.Password == "" {
+			rowErrors = append(rowErrors, fmt.Sprintf("Row %d: Missing required fields (Name, LastName, Username, Email, Password). Skipping.", excelRowNum))
+			continue
+		}
+		if !isValidEmail(formData.Email) {
+			rowErrors = append(rowErrors, fmt.Sprintf("Row %d: Invalid Email format '%s'. Skipping.", excelRowNum, formData.Email))
+			continue
+		}
+
+		// Check for existing user BEFORE hashing password (save resources)
+		existingField, err := checkUserExists(formData.Username, formData.Email)
+		if err != nil {
+			log.Printf("Row %d: Database error checking user existence for '%s'/'%s': %v", excelRowNum, formData.Username, formData.Email, err)
+			rowErrors = append(rowErrors, fmt.Sprintf("Row %d: Error checking database for username/email. Skipping.", excelRowNum))
+			continue // Skip this row due to DB error
+		}
+		if existingField != "" {
+			rowErrors = append(rowErrors, fmt.Sprintf("Row %d: %s '%s' already exists. Skipping.", excelRowNum, strings.Title(existingField), getCellValue(existingField)))
+			continue
+		}
+
+		// --- Hash Password ---
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(formData.Password), bcrypt.DefaultCost)
+		if err != nil {
+			log.Printf("Row %d: Error hashing password for user '%s': %v", excelRowNum, formData.Username, err)
+			rowErrors = append(rowErrors, fmt.Sprintf("Row %d: Error processing password. Skipping.", excelRowNum))
+			continue
+		}
+		formData.PasswordHash = string(hashedPassword)
+		formData.Password = ""             // Clear plain text password
+		formData.PasswordConfirmation = "" // Not needed here
+
+		// --- Insert Data ---
+		err = insertFormData(formData)
+		if err != nil {
+			// Attempt to give a more specific error
+			dbErrStr := err.Error()
+			if strings.Contains(dbErrStr, "already exists") {
+				// Should ideally be caught by checkUserExists, but as a fallback
+				rowErrors = append(rowErrors, fmt.Sprintf("Row %d: Failed to insert - Username or Email likely already exists (conflict). Skipping.", excelRowNum))
+			} else {
+				log.Printf("Row %d: Failed to insert data for user '%s': %v", excelRowNum, formData.Username, err)
+				rowErrors = append(rowErrors, fmt.Sprintf("Row %d: Failed to save to database. Skipping.", excelRowNum))
+			}
+			continue // Skip to next row on insertion failure
+		}
+
+		// --- Success for this row ---
+		result.SuccessfulInserts++
+		log.Printf("Successfully inserted row %d (User: %s)", excelRowNum, formData.Username)
+
+	} // End of row processing loop
+
+	// --- Finalize Results ---
+	result.FailedInserts = len(rowErrors)
+	result.Errors = rowErrors
+
+	log.Printf("Excel Upload Summary: Processed=%d, Succeeded=%d, Failed=%d", result.ProcessedRows, result.SuccessfulInserts, result.FailedInserts)
+
+	// --- Send Response ---
+	w.Header().Set("Content-Type", "application/json")
+	// Send 200 OK even if there were row errors, the details are in the body
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}
 
 // Simple email validation (can be improved with regex)
 func isValidEmail(email string) bool {
